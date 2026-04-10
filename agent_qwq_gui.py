@@ -414,3 +414,71 @@ def openai_chat(req: OpenAIChatRequest):
 
  content = result["assistant_text"]
  created = int(time.time())
+
+ return {
+ "id": f"chatcmpl-{uuid.uuid4().hex}",
+ "object": "chat.completion",
+ "created": created,
+ "model": req.model or MODEL_NAME,
+ "choices": [
+ {
+ "index": 0,
+ "message": {
+ "role": "assistant",
+ "content": content,
+ },
+ "finish_reason": "stop",
+ }
+ ],
+ "usage": None,
+ "adapter_meta": {
+ "tool_messages_count": len(result["tool_messages"]),
+ },
+ }
+
+
+def run_gui():
+ bot = build_agent()
+ chatbot_config = {
+ "prompt.suggestions": [
+ "列出 /workspace 目录结构",
+ "读取 /workspace/inbox 下的文本文件并总结风险",
+ "把行动清单写入 /workspace/output/action-plan.txt",
+ ],
+ "verbose": True,
+ }
+
+ WebUI(
+ bot,
+ chatbot_config=chatbot_config,
+ ).run(
+ server_name=GUI_HOST,
+ server_port=GUI_PORT,
+ )
+
+
+def main():
+ AGENT_ROOT.mkdir(parents=True, exist_ok=True)
+ (AGENT_ROOT / "inbox").mkdir(parents=True, exist_ok=True)
+ (AGENT_ROOT / "output").mkdir(parents=True, exist_ok=True)
+
+ gui_proc = None
+
+ if START_GUI and START_API:
+ gui_proc = mp.Process(target=run_gui, daemon=True)
+ gui_proc.start()
+ uvicorn.run(APP, host=API_HOST, port=API_PORT)
+ elif START_GUI and not START_API:
+ run_gui()
+ elif START_API and not START_GUI:
+ uvicorn.run(APP, host=API_HOST, port=API_PORT)
+ else:
+ raise RuntimeError("Both START_GUI and START_API are false. Nothing to run.")
+
+ if gui_proc and gui_proc.is_alive():
+ gui_proc.terminate()
+ gui_proc.join(timeout=5)
+
+
+if __name__ == "__main__":
+ main()
