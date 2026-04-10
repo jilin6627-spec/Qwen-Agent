@@ -42,13 +42,24 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Test image and start interactive SSH session
+      - name: Test image and start container
         run: |
           IMAGE_TAG="qwen-agent-qwq-gui:${GITHUB_SHA}"
-          echo "=== Testing loaded image ==="
+          echo "=== Testing loaded image on arm64 runner ==="
           docker images
           echo "Image ID: $(docker inspect --format='{{.Id}}' "${IMAGE_TAG}")"
-          echo "=== Starting interactive test with tmate ==="
+          echo "=== Starting container, wait 10 seconds for startup ==="
+          docker run -d --name qwen-test -p 8080:8080 -p 7860:7860 "${IMAGE_TAG}"
+          sleep 10
+          echo "=== Container status ==="
+          docker ps -a
+          echo "=== Container logs (last 50 lines) ==="
+          docker logs qwen-test --tail 50
+          echo "=== Health check ==="
+          curl -s -m 5 http://localhost:8080/healthz || echo "Health check failed"
+          echo "=== Stopping test container ==="
+          docker stop qwen-test && docker rm qwen-test
+          echo "=== Test completed, starting interactive tmate session ==="
       
       - name: Setup tmate SSH session for interactive testing
         uses: mxschmitt/action-tmate@v3
