@@ -122,3 +122,200 @@ class ReadTextFileTool(BaseTool):
  },
  ensure_ascii=False,
  )
+
+
+@register_tool("write_text_file")
+class WriteTextFileTool(BaseTool):
+ description = "写入 UTF-8 文本文件。只能写入允许的工作目录。"
+ parameters = [
+ {
+ "name": "path",
+ "type": "string",
+ "description": "目标文件路径。",
+ "required": True,
+ },
+ {
+ "name": "content",
+ "type": "string",
+ "description": "要写入的文本内容。",
+ "required": True,
+ },
+ ]
+
+ def call(self, params: str, **kwargs) -> str:
+ args = json5.loads(params)
+ path = _safe_path(args["path"])
+ content = args["content"]
+
+ try:
+ path.parent.mkdir(parents=True, exist_ok=True)
+ path.write_text(content, encoding="utf-8")
+ except Exception as e:
+ return json.dumps({"ok": False, "error": f"write failed: {str(e)}"}, ensure_ascii=False)
+
+ return json.dumps(
+ {
+ "ok": True,
+ "path": str(path),
+ "bytes": len(content.encode("utf-8")),
+ },
+ ensure_ascii=False,
+ )
+
+
+def build_llm_cfg() -> dict:
+ generate_cfg = {
+ "temperature": TEMPERATURE,
+ "top_p": TOP_P,
+ "max_tokens": MAX_TOKENS,
+ "extra_body": {
+ "top_k": TOP_K
+ },
+ }
+
+ if THOUGHT_IN_CONTENT:
+ generate_cfg["thought_in_content"] = True
+
+ return {
+ "model": MODEL_NAME,
+ "model_server": MODEL_SERVER,
+ "api_key": API_KEY,
+ "generate_cfg": generate_cfg,
+ }
+
+
+def build_agent() -> Assistant:
+ system_message = f"""
+你不是普通聊天助手，而是一个本地离线任务代理。
+
+你的工作要求：
+1. 优先完成任务，不要空谈。
+2. 涉及本地文件、目录、已有结果时，优先调用工具，不要猜测。
+3. 多步骤任务先规划，再执行，再总结。
+4. 最终输出尽量包含：已执行步骤、关键依据、产物路径。
+5. 只允许访问以下工作根目录及其子目录：
+{AGENT_ROOT}
+"""
+
+ tools = [
+ "list_dir",
+ "read_text_file",
+ "write_text_file",
+ ]
+
+ return Assistant(
+ llm=build_llm_cfg(),
+ function_list=tools,
+ name="QwQ Local Agent",
+ description="Qwen-Agent on top of existing vLLM for QwQ-32B",
+ system_message=system_message,
+ )
+
+
+BOT = build_agent()
+APP = FastAPI(title="QwQ Qwen-Agent Minimal Adapter", version="0.1.0")
+
+
+class ChatMessage(BaseModel):
+ role: str
+ content: Any
+ name: Optional[str] = None
+
+
+class RunRequest(BaseModel):
+ query: Optional[str] = None
+ history: List[ChatMessage] = Field(default_factory=list)
+
+
+def normalize_msg(msg: Any) -> dict:
+ if isinstance(msg, dict):
+ return msg
+
+ data = {}
+ for key in ("role", "name", "content"):
+ val = getattr(msg, key, None)
+ if val is not None:
+ data[key] = val
+
+ extra = getattr(msg, "extra", None)
+ if extra:
+ data["extra"] = extra
+ return data
+
+
+def content_to_text(content: Any) -> str:
+ if content is None:
+ return ""
+ if isinstance(content, str):
+ return content
+ if isinstance(content, list):
+ parts = []
+ for item in content:
+ if isinstance(item, str):
+ parts.append(item)
+ elif isinstance(item, dict):
+ if "text" in item:
+ parts.append(str(item["text"]))
+ elif "content" in item:
+ parts.append(str(item["content"]))
+ else:
+ parts.append(json.dumps(item, ensure_ascii=False))
+ else:
+ parts.append(str(item))
+ return "\n".join(parts)
+ return str(content)
+
+
+@APP.get("/healthz")
+def healthz():
+ return {
+ "ok": True,
+ "model_server": MODEL_SERVER,
+ "model_name": MODEL_NAME,
+ "agent_root": str(AGENT_ROOT),
+ "temperature": TEMPERATURE,
+ "top_p": TOP_P,
+ "top_k": TOP_K,
+ "max_tokens": MAX_TOKENS,
+ "thought_in_content": THOUGHT_IN_CONTENT,
+ }
+
+
+@APP.post("/run")
+def run_agent(req: RunRequest):
+ messages = [m.model_dump(exclude_none=True) for m in req.history]
+
+ if req.query:
+ messages.append({"role": "user", "content": req.query})
+ if not messages:
+ raise HTTPException(status_code=400, detail="empty request: provide query or history")
+
+ last_batch = []
+ try:
+ for batch in BOT.run(messages=messages):
+ last_batch = batch
+ except Exception as e:
+ raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
+
+ normalized = [normalize_msg(m) for m in last_batch]
+
+ assistant_texts = []
+ tool_messages = []
+ for m in normalized:
+ role = m.get("role")
+ if role == "assistant":
+ assistant_texts.append(content_to_text(m.get("content")))
+ elif role in {"function", "tool"}:
+ tool_messages.append(m)
+
+ return {
+ "ok": True,
+ "assistant_text": "\n".join([x for x in assistant_texts if x]).strip(),
+ "response": normalized,
+ "tool_messages": tool_messages,
+ }
+
+
+if __name__ == "__main__":
+ AGENT_ROOT.mkdir(parents=True, exist_ok=True)
+ uvicorn.run(APP, host="0.0.0.0", port=PORT)
