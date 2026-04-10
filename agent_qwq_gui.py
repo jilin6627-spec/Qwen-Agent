@@ -130,3 +130,156 @@ class ReadTextFileTool(BaseTool):
  return json.dumps({"ok": False, "error": f"file not found: {str(path)}"}, ensure_ascii=False)
  if not path.is_file():
  return json.dumps({"ok": False, "error": f"not a file: {str(path)}"}, ensure_ascii=False)
+
+ try:
+ content = path.read_text(encoding="utf-8")
+ except Exception as e:
+ return json.dumps({"ok": False, "error": f"read failed: {str(e)}"}, ensure_ascii=False)
+
+ return json.dumps(
+ {
+ "ok": True,
+ "path": str(path),
+ "content": content,
+ },
+ ensure_ascii=False,
+ )
+
+
+@register_tool("write_text_file")
+class WriteTextFileTool(BaseTool):
+ description = "写入 UTF-8 文本文件。只能写入允许的工作目录。"
+ parameters = [
+ {
+ "name": "path",
+ "type": "string",
+ "description": "目标文件路径。",
+ "required": True,
+ },
+ {
+ "name": "content",
+ "type": "string",
+ "description": "要写入的文本内容。",
+ "required": True,
+ },
+ ]
+
+ def call(self, params: str, **kwargs) -> str:
+ args = json5.loads(params)
+ path = _safe_path(args["path"])
+ content = args["content"]
+
+ try:
+ path.parent.mkdir(parents=True, exist_ok=True)
+ path.write_text(content, encoding="utf-8")
+ except Exception as e:
+ return json.dumps({"ok": False, "error": f"write failed: {str(e)}"}, ensure_ascii=False)
+
+ return json.dumps(
+ {
+ "ok": True,
+ "path": str(path),
+ "bytes": len(content.encode("utf-8")),
+ },
+ ensure_ascii=False,
+ )
+
+
+def build_llm_cfg() -> dict:
+ generate_cfg = {
+ "temperature": TEMPERATURE,
+ "top_p": TOP_P,
+ "max_tokens": MAX_TOKENS,
+ "extra_body": {
+ "top_k": TOP_K
+ },
+ }
+
+ if USE_RAW_API:
+ generate_cfg["use_raw_api"] = True
+
+ if THOUGHT_IN_CONTENT:
+ generate_cfg["thought_in_content"] = True
+
+ # 官方示例里，对自托管 vLLM/SGLang 的 thinking 参数是经 extra_body.chat_template_kwargs 传的。
+ if ENABLE_THINKING:
+ generate_cfg.setdefault("extra_body", {})
+ generate_cfg["extra_body"]["chat_template_kwargs"] = {"enable_thinking": True}
+
+ return {
+ "model": MODEL_NAME,
+ "model_type": "qwenvl_oai",
+ "model_server": MODEL_SERVER,
+ "api_key": API_KEY,
+ "generate_cfg": generate_cfg,
+ }
+
+
+def build_agent() -> Assistant:
+ system_message = f"""
+你不是普通聊天助手，而是一个本地离线任务代理。
+
+工作要求：
+1. 优先完成任务，不要空谈。
+2. 涉及本地文件、目录、已有结果时，优先调用工具，不要猜测。
+3. 多步骤任务先规划，再执行，再总结。
+4. 最终输出尽量包含：已执行步骤、关键依据、产物路径。
+5. 只允许访问以下工作根目录及其子目录：
+{AGENT_ROOT}
+"""
+
+ tools = [
+ "list_dir",
+ "read_text_file",
+ "write_text_file",
+ ]
+
+ return Assistant(
+ llm=build_llm_cfg(),
+ function_list=tools,
+ name="QwQ Local Agent",
+ description="Qwen-Agent GUI+API adapter on top of existing vLLM for QwQ-32B",
+ system_message=system_message,
+ )
+
+
+BOT = build_agent()
+APP = FastAPI(title="Qwen-Agent GUI+API Adapter", version="0.2.0")
+
+
+class ChatMessage(BaseModel):
+ role: str
+ content: Any
+ name: Optional[str] = None
+
+
+class RunRequest(BaseModel):
+ query: Optional[str] = None
+ history: List[ChatMessage] = Field(default_factory=list)
+
+
+class OpenAIChatRequest(BaseModel):
+ model: Optional[str] = None
+ messages: List[ChatMessage]
+ stream: bool = False
+ tools: Optional[Any] = None
+ tool_choice: Optional[Any] = None
+ temperature: Optional[float] = None
+ top_p: Optional[float] = None
+ max_tokens: Optional[int] = None
+
+
+def normalize_msg(msg: Any) -> dict:
+ if isinstance(msg, dict):
+ return msg
+
+ data = {}
+ for key in ("role", "name", "content"):
+ val = getattr(msg, key, None)
+ if val is not None:
+ data[key] = val
+
+ extra = getattr(msg, "extra", None)
+ if extra:
+ data["extra"] = extra
+ return data
