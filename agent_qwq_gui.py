@@ -283,3 +283,134 @@ def normalize_msg(msg: Any) -> dict:
  if extra:
  data["extra"] = extra
  return data
+
+
+def content_to_text(content: Any) -> str:
+ if content is None:
+ return ""
+ if isinstance(content, str):
+ return content
+ if isinstance(content, list):
+ parts = []
+ for item in content:
+ if isinstance(item, str):
+ parts.append(item)
+ elif isinstance(item, dict):
+ if "text" in item:
+ parts.append(str(item["text"]))
+ elif "content" in item:
+ parts.append(str(item["content"]))
+ else:
+ parts.append(json.dumps(item, ensure_ascii=False))
+ else:
+ parts.append(str(item))
+ return "\n".join(parts)
+ return str(content)
+
+
+def run_agent_once(messages: List[dict]) -> dict:
+ last_batch = []
+ for batch in BOT.run(messages=messages):
+ last_batch = batch
+
+ normalized = [normalize_msg(m) for m in last_batch]
+
+ assistant_texts = []
+ tool_messages = []
+ for m in normalized:
+ role = m.get("role")
+ if role == "assistant":
+ text = content_to_text(m.get("content"))
+ if text:
+ assistant_texts.append(text)
+ elif role in {"function", "tool"}:
+ tool_messages.append(m)
+
+ assistant_text = "\n".join(assistant_texts).strip()
+
+ return {
+ "assistant_text": assistant_text,
+ "response": normalized,
+ "tool_messages": tool_messages,
+ }
+
+
+@APP.get("/healthz")
+def healthz():
+ return {
+ "ok": True,
+ "model_server": MODEL_SERVER,
+ "model_name": MODEL_NAME,
+ "agent_root": str(AGENT_ROOT),
+ "gui": {
+ "enabled": START_GUI,
+ "host": GUI_HOST,
+ "port": GUI_PORT,
+ },
+ "api": {
+ "enabled": START_API,
+ "host": API_HOST,
+ "port": API_PORT,
+ },
+ "generate_cfg": {
+ "temperature": TEMPERATURE,
+ "top_p": TOP_P,
+ "top_k": TOP_K,
+ "max_tokens": MAX_TOKENS,
+ "thought_in_content": THOUGHT_IN_CONTENT,
+ "use_raw_api": USE_RAW_API,
+ "enable_thinking": ENABLE_THINKING,
+ },
+ }
+
+
+@APP.get("/v1/models")
+def list_models():
+ return {
+ "object": "list",
+ "data": [
+ {
+ "id": MODEL_NAME,
+ "object": "model",
+ "owned_by": "local",
+ }
+ ],
+ }
+
+
+@APP.post("/run")
+def run_agent(req: RunRequest):
+ messages = [m.model_dump(exclude_none=True) for m in req.history]
+
+ if req.query:
+ messages.append({"role": "user", "content": req.query})
+
+ if not messages:
+ raise HTTPException(status_code=400, detail="empty request: provide query or history")
+
+ try:
+ result = run_agent_once(messages)
+ except Exception as e:
+ raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
+
+ return {"ok": True, **result}
+
+
+@APP.post("/v1/chat/completions")
+def openai_chat(req: OpenAIChatRequest):
+ if req.stream:
+ raise HTTPException(status_code=400, detail="stream=true is not supported in this minimal adapter")
+
+ messages = [m.model_dump(exclude_none=True) for m in req.messages]
+ if not messages:
+ raise HTTPException(status_code=400, detail="messages is required")
+
+ # 这里显式接收 tools / tool_choice，但不向 vLLM 透传，
+ # 目的是阻断上游把 tool_choice:auto 直接打到 vLLM.
+ try:
+ result = run_agent_once(messages)
+ except Exception as e:
+ raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
+
+ content = result["assistant_text"]
+ created = int(time.time())
