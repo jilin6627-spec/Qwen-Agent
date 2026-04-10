@@ -41,3 +41,17 @@ jobs:
           path: qwen-agent-qwq-gui_arm64_${{ github.sha }}.tar.gz
           if-no-files-found: error
           retention-days: 7
+
+      - name: Test image and start interactive SSH session
+        run: |
+          IMAGE_TAG="qwen-agent-qwq-gui:${GITHUB_SHA}"
+          echo "=== Testing loaded image ==="
+          docker images
+          echo "Image ID: $(docker inspect --format='{{.Id}}' "${IMAGE_TAG}")"
+          echo "=== Starting interactive test with tmate ==="
+      
+      - name: Setup tmate SSH session for interactive testing
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-people: jilin6627-spec
+
