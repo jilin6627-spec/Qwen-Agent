@@ -17,10 +17,10 @@ from qwen_agent.tools.base import BaseTool, register_tool
 
 
 def env_bool(name: str, default: bool = False) -> bool:
- v = os.getenv(name)
- if v is None:
- return default
- return v.strip().lower() in {"1", "true", "yes", "on"}
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return v.strip().lower() in {"1", "true", "yes", "on"}
 
 
 AGENT_ROOT = Path(os.getenv("AGENT_ROOT", "/workspace")).resolve()
@@ -57,166 +57,166 @@ ENABLE_THINKING = env_bool("ENABLE_THINKING", False)
 
 
 def _safe_path(user_path: str) -> Path:
- p = Path(user_path)
- if not p.is_absolute():
- p = AGENT_ROOT / p
- p = p.resolve()
+    p = Path(user_path)
+    if not p.is_absolute():
+        p = AGENT_ROOT / p
+    p = p.resolve()
 
- if AGENT_ROOT not in p.parents and p != AGENT_ROOT:
- raise ValueError(f"path out of allowed root: {p}")
- return p
+    if AGENT_ROOT not in p.parents and p != AGENT_ROOT:
+        raise ValueError(f"path out of allowed root: {p}")
+    return p
 
 
 @register_tool("list_dir")
 class ListDirTool(BaseTool):
- description = "列出目录中的文件和子目录。只能访问允许的工作目录。"
- parameters = [
- {
- "name": "path",
- "type": "string",
- "description": "要列出的目录路径，可用绝对路径或相对工作根目录路径。",
- "required": True,
- }
- ]
+    description = "列出目录中的文件和子目录。只能访问允许的工作目录。"
+    parameters = [
+        {
+            "name": "path",
+            "type": "string",
+            "description": "要列出的目录路径，可用绝对路径或相对工作根目录路径。",
+            "required": True,
+        }
+    ]
 
- def call(self, params: str, **kwargs) -> str:
- args = json5.loads(params)
- path = _safe_path(args["path"])
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params)
+        path = _safe_path(args["path"])
 
- if not path.exists():
- return json.dumps({"ok": False, "error": f"path not found: {str(path)}"}, ensure_ascii=False)
- if not path.is_dir():
- return json.dumps({"ok": False, "error": f"not a directory: {str(path)}"}, ensure_ascii=False)
+        if not path.exists():
+            return json.dumps({"ok": False, "error": f"path not found: {str(path)}"}, ensure_ascii=False)
+        if not path.is_dir():
+            return json.dumps({"ok": False, "error": f"not a directory: {str(path)}"}, ensure_ascii=False)
 
- items = []
- for x in sorted(path.iterdir(), key=lambda z: (not z.is_dir(), z.name.lower())):
- items.append(
- {
- "name": x.name,
- "path": str(x),
- "type": "dir" if x.is_dir() else "file",
- "size": None if x.is_dir() else x.stat().st_size,
- }
- )
+        items = []
+        for x in sorted(path.iterdir(), key=lambda z: (not z.is_dir(), z.name.lower())):
+            items.append(
+                {
+                    "name": x.name,
+                    "path": str(x),
+                    "type": "dir" if x.is_dir() else "file",
+                    "size": None if x.is_dir() else x.stat().st_size,
+                }
+            )
 
- return json.dumps(
- {
- "ok": True,
- "root": str(AGENT_ROOT),
- "path": str(path),
- "items": items,
- },
- ensure_ascii=False,
- )
+        return json.dumps(
+            {
+                "ok": True,
+                "root": str(AGENT_ROOT),
+                "path": str(path),
+                "items": items,
+            },
+            ensure_ascii=False,
+        )
 
 
 @register_tool("read_text_file")
 class ReadTextFileTool(BaseTool):
- description = "读取 UTF-8 文本文件内容。只能访问允许的工作目录。"
- parameters = [
- {
- "name": "path",
- "type": "string",
- "description": "要读取的文本文件路径。",
- "required": True,
- }
- ]
+    description = "读取 UTF-8 文本文件内容。只能访问允许的工作目录。"
+    parameters = [
+        {
+            "name": "path",
+            "type": "string",
+            "description": "要读取的文本文件路径。",
+            "required": True,
+        }
+    ]
 
- def call(self, params: str, **kwargs) -> str:
- args = json5.loads(params)
- path = _safe_path(args["path"])
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params)
+        path = _safe_path(args["path"])
 
- if not path.exists():
- return json.dumps({"ok": False, "error": f"file not found: {str(path)}"}, ensure_ascii=False)
- if not path.is_file():
- return json.dumps({"ok": False, "error": f"not a file: {str(path)}"}, ensure_ascii=False)
+        if not path.exists():
+            return json.dumps({"ok": False, "error": f"file not found: {str(path)}"}, ensure_ascii=False)
+        if not path.is_file():
+            return json.dumps({"ok": False, "error": f"not a file: {str(path)}"}, ensure_ascii=False)
 
- try:
- content = path.read_text(encoding="utf-8")
- except Exception as e:
- return json.dumps({"ok": False, "error": f"read failed: {str(e)}"}, ensure_ascii=False)
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception as e:
+            return json.dumps({"ok": False, "error": f"read failed: {str(e)}"}, ensure_ascii=False)
 
- return json.dumps(
- {
- "ok": True,
- "path": str(path),
- "content": content,
- },
- ensure_ascii=False,
- )
+        return json.dumps(
+            {
+                "ok": True,
+                "path": str(path),
+                "content": content,
+            },
+            ensure_ascii=False,
+        )
 
 
 @register_tool("write_text_file")
 class WriteTextFileTool(BaseTool):
- description = "写入 UTF-8 文本文件。只能写入允许的工作目录。"
- parameters = [
- {
- "name": "path",
- "type": "string",
- "description": "目标文件路径。",
- "required": True,
- },
- {
- "name": "content",
- "type": "string",
- "description": "要写入的文本内容。",
- "required": True,
- },
- ]
+    description = "写入 UTF-8 文本文件。只能写入允许的工作目录。"
+    parameters = [
+        {
+            "name": "path",
+            "type": "string",
+            "description": "目标文件路径。",
+            "required": True,
+        },
+        {
+            "name": "content",
+            "type": "string",
+            "description": "要写入的文本内容。",
+            "required": True,
+        },
+    ]
 
- def call(self, params: str, **kwargs) -> str:
- args = json5.loads(params)
- path = _safe_path(args["path"])
- content = args["content"]
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params)
+        path = _safe_path(args["path"])
+        content = args["content"]
 
- try:
- path.parent.mkdir(parents=True, exist_ok=True)
- path.write_text(content, encoding="utf-8")
- except Exception as e:
- return json.dumps({"ok": False, "error": f"write failed: {str(e)}"}, ensure_ascii=False)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        except Exception as e:
+            return json.dumps({"ok": False, "error": f"write failed: {str(e)}"}, ensure_ascii=False)
 
- return json.dumps(
- {
- "ok": True,
- "path": str(path),
- "bytes": len(content.encode("utf-8")),
- },
- ensure_ascii=False,
- )
+        return json.dumps(
+            {
+                "ok": True,
+                "path": str(path),
+                "bytes": len(content.encode("utf-8")),
+            },
+            ensure_ascii=False,
+        )
 
 
 def build_llm_cfg() -> dict:
- generate_cfg = {
- "temperature": TEMPERATURE,
- "top_p": TOP_P,
- "max_tokens": MAX_TOKENS,
- "extra_body": {
- "top_k": TOP_K
- },
- }
+    generate_cfg = {
+        "temperature": TEMPERATURE,
+        "top_p": TOP_P,
+        "max_tokens": MAX_TOKENS,
+        "extra_body": {
+            "top_k": TOP_K
+        },
+    }
 
- if USE_RAW_API:
- generate_cfg["use_raw_api"] = True
+    if USE_RAW_API:
+        generate_cfg["use_raw_api"] = True
 
- if THOUGHT_IN_CONTENT:
- generate_cfg["thought_in_content"] = True
+    if THOUGHT_IN_CONTENT:
+        generate_cfg["thought_in_content"] = True
 
- # 官方示例里，对自托管 vLLM/SGLang 的 thinking 参数是经 extra_body.chat_template_kwargs 传的。
- if ENABLE_THINKING:
- generate_cfg.setdefault("extra_body", {})
- generate_cfg["extra_body"]["chat_template_kwargs"] = {"enable_thinking": True}
+    # 官方示例里，对自托管 vLLM/SGLang 的 thinking 参数是经 extra_body.chat_template_kwargs 传的。
+    if ENABLE_THINKING:
+        generate_cfg.setdefault("extra_body", {})
+        generate_cfg["extra_body"]["chat_template_kwargs"] = {"enable_thinking": True}
 
- return {
- "model": MODEL_NAME,
- "model_type": "qwenvl_oai",
- "model_server": MODEL_SERVER,
- "api_key": API_KEY,
- "generate_cfg": generate_cfg,
- }
+    return {
+        "model": MODEL_NAME,
+        "model_type": "qwenvl_oai",
+        "model_server": MODEL_SERVER,
+        "api_key": API_KEY,
+        "generate_cfg": generate_cfg,
+    }
 
 
 def build_agent() -> Assistant:
- system_message = f"""
+    system_message = f"""
 你不是普通聊天助手，而是一个本地离线任务代理。
 
 工作要求：
@@ -228,19 +228,19 @@ def build_agent() -> Assistant:
 {AGENT_ROOT}
 """
 
- tools = [
- "list_dir",
- "read_text_file",
- "write_text_file",
- ]
+    tools = [
+        "list_dir",
+        "read_text_file",
+        "write_text_file",
+    ]
 
- return Assistant(
- llm=build_llm_cfg(),
- function_list=tools,
- name="QwQ Local Agent",
- description="Qwen-Agent GUI+API adapter on top of existing vLLM for QwQ-32B",
- system_message=system_message,
- )
+    return Assistant(
+        llm=build_llm_cfg(),
+        function_list=tools,
+        name="QwQ Local Agent",
+        description="Qwen-Agent GUI+API adapter on top of existing vLLM for QwQ-32B",
+        system_message=system_message,
+    )
 
 
 BOT = build_agent()
@@ -248,237 +248,237 @@ APP = FastAPI(title="Qwen-Agent GUI+API Adapter", version="0.2.0")
 
 
 class ChatMessage(BaseModel):
- role: str
- content: Any
- name: Optional[str] = None
+    role: str
+    content: Any
+    name: Optional[str] = None
 
 
 class RunRequest(BaseModel):
- query: Optional[str] = None
- history: List[ChatMessage] = Field(default_factory=list)
+    query: Optional[str] = None
+    history: List[ChatMessage] = Field(default_factory=list)
 
 
 class OpenAIChatRequest(BaseModel):
- model: Optional[str] = None
- messages: List[ChatMessage]
- stream: bool = False
- tools: Optional[Any] = None
- tool_choice: Optional[Any] = None
- temperature: Optional[float] = None
- top_p: Optional[float] = None
- max_tokens: Optional[int] = None
+    model: Optional[str] = None
+    messages: List[ChatMessage]
+    stream: bool = False
+    tools: Optional[Any] = None
+    tool_choice: Optional[Any] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    max_tokens: Optional[int] = None
 
 
 def normalize_msg(msg: Any) -> dict:
- if isinstance(msg, dict):
- return msg
+    if isinstance(msg, dict):
+        return msg
 
- data = {}
- for key in ("role", "name", "content"):
- val = getattr(msg, key, None)
- if val is not None:
- data[key] = val
+    data = {}
+    for key in ("role", "name", "content"):
+        val = getattr(msg, key, None)
+        if val is not None:
+            data[key] = val
 
- extra = getattr(msg, "extra", None)
- if extra:
- data["extra"] = extra
- return data
+    extra = getattr(msg, "extra", None)
+    if extra:
+        data["extra"] = extra
+    return data
 
 
 def content_to_text(content: Any) -> str:
- if content is None:
- return ""
- if isinstance(content, str):
- return content
- if isinstance(content, list):
- parts = []
- for item in content:
- if isinstance(item, str):
- parts.append(item)
- elif isinstance(item, dict):
- if "text" in item:
- parts.append(str(item["text"]))
- elif "content" in item:
- parts.append(str(item["content"]))
- else:
- parts.append(json.dumps(item, ensure_ascii=False))
- else:
- parts.append(str(item))
- return "\n".join(parts)
- return str(content)
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if "text" in item:
+                    parts.append(str(item["text"]))
+                elif "content" in item:
+                    parts.append(str(item["content"]))
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
 
 
 def run_agent_once(messages: List[dict]) -> dict:
- last_batch = []
- for batch in BOT.run(messages=messages):
- last_batch = batch
+    last_batch = []
+    for batch in BOT.run(messages=messages):
+        last_batch = batch
 
- normalized = [normalize_msg(m) for m in last_batch]
+    normalized = [normalize_msg(m) for m in last_batch]
 
- assistant_texts = []
- tool_messages = []
- for m in normalized:
- role = m.get("role")
- if role == "assistant":
- text = content_to_text(m.get("content"))
- if text:
- assistant_texts.append(text)
- elif role in {"function", "tool"}:
- tool_messages.append(m)
+    assistant_texts = []
+    tool_messages = []
+    for m in normalized:
+        role = m.get("role")
+        if role == "assistant":
+            text = content_to_text(m.get("content"))
+            if text:
+                assistant_texts.append(text)
+        elif role in {"function", "tool"}:
+            tool_messages.append(m)
 
- assistant_text = "\n".join(assistant_texts).strip()
+    assistant_text = "\n".join(assistant_texts).strip()
 
- return {
- "assistant_text": assistant_text,
- "response": normalized,
- "tool_messages": tool_messages,
- }
+    return {
+        "assistant_text": assistant_text,
+        "response": normalized,
+        "tool_messages": tool_messages,
+    }
 
 
 @APP.get("/healthz")
 def healthz():
- return {
- "ok": True,
- "model_server": MODEL_SERVER,
- "model_name": MODEL_NAME,
- "agent_root": str(AGENT_ROOT),
- "gui": {
- "enabled": START_GUI,
- "host": GUI_HOST,
- "port": GUI_PORT,
- },
- "api": {
- "enabled": START_API,
- "host": API_HOST,
- "port": API_PORT,
- },
- "generate_cfg": {
- "temperature": TEMPERATURE,
- "top_p": TOP_P,
- "top_k": TOP_K,
- "max_tokens": MAX_TOKENS,
- "thought_in_content": THOUGHT_IN_CONTENT,
- "use_raw_api": USE_RAW_API,
- "enable_thinking": ENABLE_THINKING,
- },
- }
+    return {
+        "ok": True,
+        "model_server": MODEL_SERVER,
+        "model_name": MODEL_NAME,
+        "agent_root": str(AGENT_ROOT),
+        "gui": {
+            "enabled": START_GUI,
+            "host": GUI_HOST,
+            "port": GUI_PORT,
+        },
+        "api": {
+            "enabled": START_API,
+            "host": API_HOST,
+            "port": API_PORT,
+        },
+        "generate_cfg": {
+            "temperature": TEMPERATURE,
+            "top_p": TOP_P,
+            "top_k": TOP_K,
+            "max_tokens": MAX_TOKENS,
+            "thought_in_content": THOUGHT_IN_CONTENT,
+            "use_raw_api": USE_RAW_API,
+            "enable_thinking": ENABLE_THINKING,
+        },
+    }
 
 
 @APP.get("/v1/models")
 def list_models():
- return {
- "object": "list",
- "data": [
- {
- "id": MODEL_NAME,
- "object": "model",
- "owned_by": "local",
- }
- ],
- }
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": MODEL_NAME,
+                "object": "model",
+                "owned_by": "local",
+            }
+        ],
+    }
 
 
 @APP.post("/run")
 def run_agent(req: RunRequest):
- messages = [m.model_dump(exclude_none=True) for m in req.history]
+    messages = [m.model_dump(exclude_none=True) for m in req.history]
 
- if req.query:
- messages.append({"role": "user", "content": req.query})
+    if req.query:
+        messages.append({"role": "user", "content": req.query})
 
- if not messages:
- raise HTTPException(status_code=400, detail="empty request: provide query or history")
+    if not messages:
+        raise HTTPException(status_code=400, detail="empty request: provide query or history")
 
- try:
- result = run_agent_once(messages)
- except Exception as e:
- raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
+    try:
+        result = run_agent_once(messages)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
 
- return {"ok": True, **result}
+    return {"ok": True, **result}
 
 
 @APP.post("/v1/chat/completions")
 def openai_chat(req: OpenAIChatRequest):
- if req.stream:
- raise HTTPException(status_code=400, detail="stream=true is not supported in this minimal adapter")
+    if req.stream:
+        raise HTTPException(status_code=400, detail="stream=true is not supported in this minimal adapter")
 
- messages = [m.model_dump(exclude_none=True) for m in req.messages]
- if not messages:
- raise HTTPException(status_code=400, detail="messages is required")
+    messages = [m.model_dump(exclude_none=True) for m in req.messages]
+    if not messages:
+        raise HTTPException(status_code=400, detail="messages is required")
 
- # 这里显式接收 tools / tool_choice，但不向 vLLM 透传，
- # 目的是阻断上游把 tool_choice:auto 直接打到 vLLM.
- try:
- result = run_agent_once(messages)
- except Exception as e:
- raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
+    # 这里显式接收 tools / tool_choice，但不向 vLLM 透传，
+    # 目的是阻断上游把 tool_choice:auto 直接打到 vLLM.
+    try:
+        result = run_agent_once(messages)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"agent execution failed: {str(e)}")
 
- content = result["assistant_text"]
- created = int(time.time())
+    content = result["assistant_text"]
+    created = int(time.time())
 
- return {
- "id": f"chatcmpl-{uuid.uuid4().hex}",
- "object": "chat.completion",
- "created": created,
- "model": req.model or MODEL_NAME,
- "choices": [
- {
- "index": 0,
- "message": {
- "role": "assistant",
- "content": content,
- },
- "finish_reason": "stop",
- }
- ],
- "usage": None,
- "adapter_meta": {
- "tool_messages_count": len(result["tool_messages"]),
- },
- }
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
+        "object": "chat.completion",
+        "created": created,
+        "model": req.model or MODEL_NAME,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": None,
+        "adapter_meta": {
+            "tool_messages_count": len(result["tool_messages"]),
+        },
+    }
 
 
 def run_gui():
- bot = build_agent()
- chatbot_config = {
- "prompt.suggestions": [
- "列出 /workspace 目录结构",
- "读取 /workspace/inbox 下的文本文件并总结风险",
- "把行动清单写入 /workspace/output/action-plan.txt",
- ],
- "verbose": True,
- }
+    bot = build_agent()
+    chatbot_config = {
+        "prompt.suggestions": [
+            "列出 /workspace 目录结构",
+            "读取 /workspace/inbox 下的文本文件并总结风险",
+            "把行动清单写入 /workspace/output/action-plan.txt",
+        ],
+        "verbose": True,
+    }
 
- WebUI(
- bot,
- chatbot_config=chatbot_config,
- ).run(
- server_name=GUI_HOST,
- server_port=GUI_PORT,
- )
+    WebUI(
+        bot,
+        chatbot_config=chatbot_config,
+    ).run(
+        server_name=GUI_HOST,
+        server_port=GUI_PORT,
+    )
 
 
 def main():
- AGENT_ROOT.mkdir(parents=True, exist_ok=True)
- (AGENT_ROOT / "inbox").mkdir(parents=True, exist_ok=True)
- (AGENT_ROOT / "output").mkdir(parents=True, exist_ok=True)
+    AGENT_ROOT.mkdir(parents=True, exist_ok=True)
+    (AGENT_ROOT / "inbox").mkdir(parents=True, exist_ok=True)
+    (AGENT_ROOT / "output").mkdir(parents=True, exist_ok=True)
 
- gui_proc = None
+    gui_proc = None
 
- if START_GUI and START_API:
- gui_proc = mp.Process(target=run_gui, daemon=True)
- gui_proc.start()
- uvicorn.run(APP, host=API_HOST, port=API_PORT)
- elif START_GUI and not START_API:
- run_gui()
- elif START_API and not START_GUI:
- uvicorn.run(APP, host=API_HOST, port=API_PORT)
- else:
- raise RuntimeError("Both START_GUI and START_API are false. Nothing to run.")
+    if START_GUI and START_API:
+        gui_proc = mp.Process(target=run_gui, daemon=True)
+        gui_proc.start()
+        uvicorn.run(APP, host=API_HOST, port=API_PORT)
+    elif START_GUI and not START_API:
+        run_gui()
+    elif START_API and not START_GUI:
+        uvicorn.run(APP, host=API_HOST, port=API_PORT)
+    else:
+        raise RuntimeError("Both START_GUI and START_API are false. Nothing to run.")
 
- if gui_proc and gui_proc.is_alive():
- gui_proc.terminate()
- gui_proc.join(timeout=5)
+    if gui_proc and gui_proc.is_alive():
+        gui_proc.terminate()
+        gui_proc.join(timeout=5)
 
 
 if __name__ == "__main__":
- main()
+    main()
