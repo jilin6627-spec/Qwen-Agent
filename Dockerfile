@@ -29,7 +29,7 @@ COPY . /src/qwen-agent
 # 从源码安装 Qwen-Agent，并启用 GUI / MCP / Code Interpreter 相关依赖
 RUN python -m pip install -U pip setuptools wheel \
  && python -m pip install -e '/src/qwen-agent[gui,mcp,code_interpreter]' \
- && python -m pip install uvicorn fastapi json5
+ && python -m pip install uvicorn fastapi json5 soundfile
 
 COPY agent_qwq_gui.py /app/agent_qwq_gui.py
 
